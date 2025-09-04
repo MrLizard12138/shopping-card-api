@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import json
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from supabase import create_client, Client
@@ -31,34 +32,33 @@ def handle_payment(request: PaymentRequest):
         if request.amount <= 0:
             raise HTTPException(status_code=400, detail="支付金额必须大于0")
 
-        # 2. 调用数据库函数来安全地处理支付
-        #    这是我们之前在 Supabase SQL Editor 中创建的那个强大的函数！
+        # 2. 准备调用数据库函数的参数
         rpc_params = {
             "card_id_input": request.cardId,
             "amount_to_deduct": request.amount,
             "merchant_id_input": request.merchantId
         }
         
+        # 3. 调用数据库函数
         response = supabase.rpc("process_payment", rpc_params).execute()
         
-        # 3. 处理数据库函数的返回结果
+        # 4. 处理数据库函数的返回结果 (关键改动)
         if response.data:
-            result = response.data
+            # 手动解析数据库返回的纯文本JSON
+            result = json.loads(response.data)
+            
             if result.get("status") == "success":
-                return {
-                    "status": "success",
-                    "message": result.get("message"),
-                    "newBalance": result.get("newBalance")
-                }
+                # 直接返回解析后的成功结果
+                return result 
             else:
-                # 如果是业务逻辑错误（如余额不足），返回 400 错误
+                # 如果是业务逻辑错误（如余额不足），则向前端报告错误
                 raise HTTPException(status_code=400, detail=result.get("message"))
         else:
-            # 如果 rpc 调用本身失败了
-            raise HTTPException(status_code=500, detail="数据库操作失败")
+            # 这种情况不应该发生，但作为保险
+            raise HTTPException(status_code=500, detail="数据库操作失败，未返回任何数据")
 
     except HTTPException as http_exc:
-        # 重新抛出已知的 HTTP 异常
+        # 重新抛出已知的 HTTP 异常，以便 FastAPI 正确处理
         raise http_exc
     except Exception as e:
         # 捕获所有其他未知错误
