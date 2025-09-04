@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>艺术家购物卡 核销终端</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 flex items-center justify-center min-h-screen">
+
+    <div class="bg-white p-8 rounded-xl shadow-md w-full max-w-md">
+        
+        <h1 class="text-2xl font-bold text-slate-800 text-center mb-6">
+            艺术家购物卡 核销终端
+        </h1>
+        
+        <form id="paymentForm" class="space-y-6">
+            
+            <div>
+                <label for="cardIdInput" class="block text-sm font-medium text-slate-700 mb-1">购物卡号 (Card ID)</label>
+                <input type="text" id="cardIdInput" placeholder="请刷卡或手动输入卡号" required
+                       class="block w-full px-4 py-3 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+
+            <div>
+                <label for="amountInput" class="block text-sm font-medium text-slate-700 mb-1">消费金额 (Amount)</label>
+                <div class="relative">
+                    <div class="pointer-events-none absolute inset-y-0 left-0 pl-4 flex items-center">
+                        <span class="text-slate-500">¥</span>
+                    </div>
+                    <input type="number" id="amountInput" step="0.01" min="0.01" placeholder="198.50" required
+                           class="block w-full pl-8 pr-4 py-3 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+            </div>
+
+            <div>
+                <label for="merchantIdInput" class="block text-sm font-medium text-slate-700 mb-1">商户ID (Merchant ID)</label>
+                <input type="text" id="merchantIdInput" value="TEST_STORE_01" readonly
+                       class="block w-full px-4 py-3 border border-slate-300 rounded-md shadow-sm bg-slate-50 text-slate-500 cursor-not-allowed">
+            </div>
+
+            <button type="submit" id="submitButton"
+                    class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-lg font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors disabled:bg-indigo-300">
+                <span id="buttonText">确认扣款</span>
+            </button>
+        </form>
+
+        <div id="statusMessage" class="mt-6">
+            </div>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- 获取页面元素 ---
+            const paymentForm = document.getElementById('paymentForm');
+            const cardIdInput = document.getElementById('cardIdInput');
+            const amountInput = document.getElementById('amountInput');
+            const merchantIdInput = document.getElementById('merchantIdInput');
+            const submitButton = document.getElementById('submitButton');
+            const buttonText = document.getElementById('buttonText');
+            const statusMessage = document.getElementById('statusMessage');
+
+            // !!! 关键配置: 请将这里替换为您在 Render 上部署成功的 API 地址 !!!
+            const API_URL = 'https://shopping-card-api-fiig.onrender.com/handlePayment';
+
+            // --- 表单提交事件 ---
+            paymentForm.addEventListener('submit', async (event) => {
+                event.preventDefault(); // 阻止表单默认的刷新页面行为
+                
+                // 获取输入值
+                const cardId = cardIdInput.value.trim();
+                const amount = parseFloat(amountInput.value);
+                const merchantId = merchantIdInput.value.trim();
+
+                // 简单的客户端验证
+                if (!cardId || !amount || !merchantId || amount <= 0) {
+                    showErrorState('请确保所有字段都已正确填写。');
+                    return;
+                }
+
+                // --- 进入加载状态 ---
+                submitButton.disabled = true;
+                buttonText.textContent = '正在处理...';
+                showLoadingState();
+
+                try {
+                    // --- 发送 API 请求 ---
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            cardId: cardId,
+                            amount: amount,
+                            merchantId: merchantId
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        // 如果 HTTP 状态码不是 2xx, 抛出错误
+                        // 错误信息在 data.detail 中 (来自 FastAPI)
+                        throw new Error(data.detail || '未知错误');
+                    }
+                    
+                    // --- 处理成功响应 ---
+                    showSuccessState(data);
+                    paymentForm.reset(); // 成功后重置表单
+                    cardIdInput.focus(); // 将光标定位到卡号输入框，方便下一笔
+
+                } catch (error) {
+                    // --- 处理失败响应 ---
+                    showErrorState(error.message);
+                } finally {
+                    // --- 恢复按钮状态 ---
+                    submitButton.disabled = false;
+                    buttonText.textContent = '确认扣款';
+                }
+            });
+
+            // --- 状态显示辅助函数 ---
+            function showLoadingState() {
+                statusMessage.innerHTML = `
+                    <div class="p-4 rounded-md bg-blue-50 text-blue-800 flex items-center">
+                        <svg class="animate-spin -ml-1 mr-3 h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        正在处理，请稍候...
+                    </div>
+                `;
+            }
+
+            function showSuccessState(data) {
+                statusMessage.innerHTML = `
+                    <div class="p-4 rounded-md bg-green-50 text-green-800">
+                        <div class="flex items-center">
+                             <svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <h3 class="text-lg font-semibold">支付成功！</h3>
+                        </div>
+                        <p class="mt-2 text-md">新余额: ¥ ${data.newBalance.toFixed(2)}</p>
+                    </div>
+                `;
+            }
+
+            function showErrorState(message) {
+                statusMessage.innerHTML = `
+                    <div class="p-4 rounded-md bg-red-50 text-red-800">
+                         <div class="flex items-center">
+                            <svg class="h-6 w-6 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <h3 class="text-lg font-semibold">操作失败！</h3>
+                        </div>
+                        <p class="mt-2 text-md">原因: ${message}</p>
+                    </div>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
